@@ -14,17 +14,17 @@ parser = ArgumentParser()
 parser.add_argument("--output_file", type=str)
 args = parser.parse_args()
 
-settings = dict(nx=500, dt=0.01, theta=0.6, nu=1e-6)
-sigma_y = 5e-4
-t_final = 300.
+settings = dict(nx=500, dt=2., theta=0.6, nu=1., bump_centre=1000.)
+sigma_y = 5e-2
+t_final = 60. * 60 * 24
 
 swe_dgp = ShallowOne(
     control=dict(nx=settings["nx"],
                  dt=settings["dt"],
                  theta=settings["theta"],
-                 simulation="immersed_bump"),
+                 simulation="tidal_flow"),
     params=dict(nu=settings["nu"],
-                bump_centre=10.))
+                bump_centre=settings["bump_centre"]))
 
 # set the observation system
 nt = np.int64(t_final / settings["dt"])

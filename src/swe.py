@@ -61,9 +61,7 @@ class ShallowOneLinear:
         self.dt = control["dt"]
         self.nu = params["nu"]
         self.bump_centre = params["bump_centre"]
-
-        # HACK: trying out setting default length for now
-        self.L = 25.
+        self.L = 10_000
 
         # setup mesh and function spaces
         self.mesh = fe.IntervalMesh(self.nx, 0., self.L)
@@ -90,21 +88,35 @@ class ShallowOneLinear:
         self.x_dofs_h = self.x_dofs[self.h_dofs, :]
 
         # HACK: introduce new function space to construct interpolant
+        nu = fe.Constant(self.nu)
         g = fe.Constant(9.8)
 
-        def bounds(x, on_boundary):
-            return on_boundary
+        def _right(x, on_boundary):
+            return x[0] >= (self.L - fe.DOLFIN_EPS)
 
-        self.bcs = fe.DirichletBC(self.W.sub(1), fe.Constant(0.), bounds)
+        def _left(x, on_boundary):
+            return x[0] <= fe.DOLFIN_EPS
 
-        H = BumpTopo(self.bump_centre, self.L)
+        self._right = _right
+        self._left = _left
+
+        u_right = fe.Constant(0.0)
+        bc_u_right = fe.DirichletBC(self.W.sub(0), u_right, self._right)
+
+        self.tidal_bc = fe.Expression(
+            "2 * (1 + cos(pi * ((4 * t) / 86400)))", t=0., degree=4)
+        bc_h_left = fe.DirichletBC(self.W.sub(1), self.tidal_bc, self._left)
+        self.bcs = [bc_u_right, bc_h_left]
+
+        H = fe.Expression(
+            "40 - 5 * (1 + tanh((x[0] - 2000)/2000))" +
+            f"-10 * exp(-0.5 / (100 * 100) * pow(x[0] - {self.bump_centre}, 2))",
+            degree=4)
         self.H = fe.interpolate(H, self.H_space)
         u, h = fe.TrialFunctions(self.W)
         v_u, v_h = fe.TestFunctions(self.W)
 
         self.du_prev = fe.Function(self.W)
-        fe.assign(self.du_prev.sub(1),
-                  fe.interpolate(H_INIT_BUMP, self.H_space))
         u_prev, h_prev = fe.split(self.du_prev)
 
         dt = fe.Constant(self.dt)
@@ -112,22 +124,26 @@ class ShallowOneLinear:
         u_theta = self.theta * u + (1 - self.theta) * u_prev
         h_theta = self.theta * h + (1 - self.theta) * h_prev
 
-        # (inviscid flow)
+        # inviscid flow
         self.F = (fe.inner(h - h_prev, v_h) / dt * fe.dx
                   + (self.H * u_theta).dx(0) * v_h * fe.dx
                   + fe.inner(u - u_prev, v_u) / dt * fe.dx
+                  + nu * fe.inner(fe.grad(u_theta), fe.grad(v_u)) * fe.dx
                   + g * h_theta.dx(0) * v_u * fe.dx)
 
         self.du = fe.Function(self.W)
         self.du_vertices = np.copy(self.du.compute_vertex_values())
 
-        self.a, self.L = fe.system(self.F)
-        self.problem = fe.LinearVariationalProblem(self.a, self.L, self.du, bcs=self.bcs)
+        self.a, self.l = fe.system(self.F)
+        self.problem = fe.LinearVariationalProblem(
+            self.a, self.l, self.du, bcs=self.bcs)
         self.solver = fe.LinearVariationalSolver(self.problem)
 
-    def solve(self):
+    def solve(self, t, set_prev=True):
+        self.tidal_bc.t = t
         self.solver.solve()
-        fe.assign(self.du_prev, self.du)
+        if set_prev:
+            fe.assign(self.du_prev, self.du)
 
     def compute_energy(self):
         u, h = fe.split(self.du)
@@ -168,10 +184,12 @@ class ShallowOne:
         self.dt = control["dt"]
         self.simulation = control["simulation"]
 
+        # HACK(connor) use 'c' and 'bump_centre' to parameterise both
         if self.simulation == "dam_break":
             self.L = 2000
         elif self.simulation == "tidal_flow":
-            self.L = 14_000
+            self.bump_centre = params["bump_centre"]
+            self.L = 10_000
         elif self.simulation == "immersed_bump":
             self.bump_centre = params["bump_centre"]
             self.L = 25.
@@ -186,6 +204,8 @@ class ShallowOne:
         self.x = fe.SpatialCoordinate(self.mesh)
         self.boundaries = fe.MeshFunction("size_t", self.mesh,
                                           self.mesh.topology().dim() - 1, 0)
+        self.dx = self.mesh.hmax()
+        logger.info(f"CFL: {np.sqrt(9.81 * 10) * self.dt / self.dx:.5f}")
 
         U = fe.FiniteElement("P", self.mesh.ufl_cell(), 2)
         H = fe.FiniteElement("P", self.mesh.ufl_cell(), 1)
@@ -213,9 +233,9 @@ class ShallowOne:
             ic = fe.interpolate(p, self.H_space)
         elif self.simulation == "tidal_flow":
             H = fe.Expression(
-                "50.5 - 40 * x[0] / L - 10 * sin(pi * (4 * x[0] / L - 0.5))",
-                L=self.L,
-                degree=2)
+                "40 - 5 * (1 + tanh((x[0] - 2000)/2000))" +
+                f"-10 * exp(-0.5 / (100 * 100) * pow(x[0] - {self.bump_centre}, 2))",
+                degree=4)
             self.H = fe.interpolate(H, self.H_space)
         elif self.simulation == "immersed_bump":
             # set H
@@ -228,7 +248,6 @@ class ShallowOne:
 
         self.du_prev = fe.Function(self.W)
         u_prev, h_prev = fe.split(self.du_prev)
-
         v_u, v_h = fe.TestFunctions(self.W)
 
         g = fe.Constant(9.8)
@@ -240,10 +259,11 @@ class ShallowOne:
         h_theta = self.theta * h + (1 - self.theta) * h_prev
         self.F = (fe.inner(u - u_prev, v_u) / dt * fe.dx
                   + u_prev * u_theta.dx(0) * v_u * fe.dx
-                  + nu * 2 * fe.inner(fe.grad(u_theta), fe.grad(v_u)) * fe.dx
+                  + nu * fe.inner(fe.grad(u_theta), fe.grad(v_u)) * fe.dx
                   + g * h_theta.dx(0) * v_u * fe.dx
                   + fe.inner(h - h_prev, v_h) / dt * fe.dx
                   + ((self.H + h_theta) * u_theta).dx(0) * v_h * fe.dx)
+        self.J = fe.derivative(self.F, self.du)
 
         # assemble RHS
         self.rhs = (- u * u.dx(0) * v_u * fe.dx
@@ -251,7 +271,6 @@ class ShallowOne:
                     - g * h.dx(0) * v_u * fe.dx
                     - ((self.H + h) * u).dx(0) * v_h * fe.dx)
         self.rhs_derivative = fe.derivative(self.rhs, self.du)
-        self.J = fe.derivative(self.F, self.du)
 
         def _right(x, on_boundary):
             return x[0] >= (self.L - fe.DOLFIN_EPS)
@@ -280,10 +299,11 @@ class ShallowOne:
                                                             h_left) * fe.ds
         elif self.simulation == "tidal_flow":
             u_right = fe.Constant(0.0)
-
-            bc_h_left = fe.DirichletBC(self.W.sub(1), self.tidal_bc(0), self._left)
             bc_u_right = fe.DirichletBC(self.W.sub(0), u_right, self._right)
-            self.bcs = [bc_h_left, bc_u_right]
+            self.tidal_bc = fe.Expression(
+                "2 * (1 + cos(pi * ((4 * t) / 86400)))", t=0., degree=4)
+            bc_h_left = fe.DirichletBC(self.W.sub(1), self.tidal_bc, self._left)
+            self.bcs = [bc_u_right, bc_h_left]
         elif self.simulation == "immersed_bump":
             for init in [self.du, self.du_prev]:
                 ic = fe.interpolate(H_INIT_BUMP, self.H_space)
@@ -294,9 +314,42 @@ class ShallowOne:
 
             self.bcs = fe.DirichletBC(self.W.sub(1), fe.Constant(0.), bounds)
 
+        problem = fe.NonlinearVariationalProblem(self.F, self.du, bcs=self.bcs, J=self.J)
+        self.solver = fe.NonlinearVariationalSolver(problem)
+
+        # vanilla fenics solver options
+        prm = self.solver.parameters
+        # prm['newton_solver']['absolute_tolerance'] = 1E-8
+        # prm['newton_solver']['relative_tolerance'] = 1E-6
+        # prm['newton_solver']['convergence_criterion'] = "incremental"
+        # prm['newton_solver']['maximum_iterations'] = 50
+        # prm['newton_solver']['relaxation_parameter'] = 0.5
+
+        # PETSc SNES config
+        prm["nonlinear_solver"] = "snes"
+        prm["snes_solver"]["line_search"] = "bt"
+        prm["snes_solver"]["linear_solver"] = "mumps"
+        # prm["snes_solver"]["linear_solver"] = "gmres"
+        # prm["snes_solver"]["preconditioner"] = "sor"
+        # logger.info(f"Using {prm['snes_solver']['linear_solver']}"
+        #             + f"w/PC {prm['snes_solver']['preconditioner']}")
+        
+        # solver convergence
+        prm["snes_solver"]["relative_tolerance"] = 1e-6
+        prm["snes_solver"]['absolute_tolerance'] = 1e-8
+        prm["snes_solver"]["maximum_iterations"] = 50
+        prm["snes_solver"]['error_on_nonconvergence'] = True
+
+        # solver reporting
+        prm["snes_solver"]['krylov_solver']['report'] = False
+        prm["snes_solver"]['krylov_solver']['monitor_convergence'] = False
+
+        # don't print outputs from the Newton solver
+        prm["snes_solver"]["report"] = False
+
     @staticmethod
     def tidal_bc(t):
-        return 4 - 4 * np.sin(np.pi * ((4 * t) / 86_400 + 0.5))
+        return 2 * (1 + np.cos(np.pi * ((4 * t) / 86_400)))
 
     def compute_energy(self):
         u, h = fe.split(self.du)
@@ -304,10 +357,9 @@ class ShallowOne:
 
     def solve(self, t, set_prev=True):
         if self.simulation == "tidal_flow":
-            self.bcs[0] = fe.DirichletBC(self.W.sub(1), self.tidal_bc(t),
-                                         self._left)
+            self.tidal_bc.t = t
 
-        fe.solve(self.F == 0, self.du, bcs=self.bcs, J=self.J)
+        self.solver.solve()
 
         if set_prev:
             fe.assign(self.du_prev, self.du)

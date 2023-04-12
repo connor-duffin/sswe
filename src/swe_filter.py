@@ -61,6 +61,7 @@ class ShallowOneFilter:
 
                 self.G_sqrt[self.u_dofs, 0:len(Ku_vals)] = (
                     Ku_vecs @ np.diag(np.sqrt(Ku_vals)))
+                print(f"Spectral diff (u): {Ku_vals[-1]:.4e}, {Ku_vals[0]:.4e}")
 
             if stat_params["rho_h"] > 0.:
                 if stat_params["hilbert_gp"]:
@@ -75,6 +76,7 @@ class ShallowOneFilter:
                                                   k=self.k_init_h)
                 self.G_sqrt[self.h_dofs, self.k_init_u:(self.k_init_u + len(Kh_vals))] = (
                     Kh_vecs @ np.diag(np.sqrt(Kh_vals)))
+                print(f"Spectral diff (h): {Kh_vals[-1]:.4e}, {Kh_vals[0]:.4e}")
 
             # multiplication *after* the initial construction
             self.G_sqrt[:] = M_scipy @ self.G_sqrt
@@ -179,11 +181,11 @@ class ShallowOneEx(ShallowOne, ShallowOneFilter):
 
     def prediction_step(self, t):
         if self.simulation == "tidal_flow":
-            self.bcs[0] = fe.DirichletBC(self.W.sub(1), self.tidal_bc(t),
-                                         self._left)
+            self.tidal_bc.t = t
 
         # solve for the mean
-        fe.solve(self.F == 0, self.du, bcs=self.bcs, J=self.J)
+        self.solver.solve()
+        # fe.solve(self.F == 0, self.du, bcs=self.bcs, J=self.J)
         self.mean[:] = self.du.vector().get_local()
 
         self.assemble_derivatives()
@@ -233,16 +235,19 @@ class ShallowOneKalman(ShallowOneLinear, ShallowOneFilter):
         ShallowOneFilter.__init__(self, stat_params=stat_params, lr=lr)
 
         self.A_mat = fe.assemble(self.a)
-        self.A_prev = fe.derivative(self.L, self.du_prev)
+        self.A_prev = fe.derivative(self.l, self.du_prev)
         self.A_prev_mat = fe.assemble(self.A_prev)
 
-        for A in [self.A_mat, self.A_prev_mat]: self.bcs.apply(A)
+        for A in [self.A_mat, self.A_prev_mat]:
+            for bc in self.bcs:
+                bc.apply(A)
 
         self.A_scipy = dolfin_to_csr(self.A_mat)
         self.A_scipy_lu = splu(self.A_scipy.tocsc())
         self.A_prev_scipy = dolfin_to_csr(self.A_prev_mat)
 
     def prediction_step(self, t):
+        self.tidal_bc.t = t
         self.solver.solve()
         self.mean[:] = self.du.vector().get_local()
 
