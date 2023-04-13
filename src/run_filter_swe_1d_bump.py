@@ -20,7 +20,7 @@ norm = np.linalg.norm
 
 
 # set up global vars
-control = dict(nx=500, dt=0.01, theta=0.6, simulation="immersed_bump")
+control = dict(nx=500, dt=2., theta=0.6, simulation="tidal_flow")
 
 
 def compute_rmse(post, y_obs, H_obs, relative=False):
@@ -46,30 +46,28 @@ def compute_errors(post, true, H_verts, relative=True):
 
 
 def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
-    # TODO(connor): eventually (most of) these will be args
-    stat_params = dict(rho_u=1e-2, ell_u=5.,
-                       rho_h=1., ell_h=5.,
+    # TODO(connor): eventually most of these will be args
+    stat_params = dict(rho_u=0., ell_u=1000.,
+                       rho_h=2e-3, ell_h=1000.,
                        k=k, k_init_u=k, k_init_h=k,
                        hilbert_gp=True)
 
-    # keep (some of) these fixed for now
-    obs_system = dict(nt_skip=nt_skip, nx_skip=10, sigma_y=5e-4)
+    # keep fixed for now
+    obs_system = dict(nt_skip=nt_skip, nx_skip=50, sigma_y=5e-2)
 
     if linear:
-        swe = ShallowOneKalman(
-            control=control,
-            params=dict(nu=0., bump_centre=c),
-            stat_params=stat_params,
-            lr=True)
+        swe = ShallowOneKalman(control=control,
+                               params=dict(nu=nu, bump_centre=c),
+                               stat_params=stat_params,
+                               lr=True)
     else:
-        swe = ShallowOneEx(
-            control=control,
-            params=dict(nu=nu, bump_centre=c),
-            stat_params=stat_params,
-            lr=True)
+        swe = ShallowOneEx(control=control,
+                           params=dict(nu=nu, bump_centre=c),
+                           stat_params=stat_params,
+                           lr=True)
 
     # set the simulation runtimes
-    t_final = 200.
+    t_final = 12 * 60 * 60.
     nt = np.int32(t_final / control["dt"])
 
     # first read in the data
@@ -78,6 +76,7 @@ def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
 
     # do some double checking
     assert control["dt"] == dat.coords["t"].values[1] - dat.coords["t"].values[0]
+    assert t_final <= dat.coords["t"].values[-1]
     np.testing.assert_allclose(dat.coords["x"].values, swe.x_coords.flatten())
 
     # build observation/interpolation operators

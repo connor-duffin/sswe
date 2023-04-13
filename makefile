@@ -1,15 +1,16 @@
 # 1d immersed bump
 # ----------------
-ks = 4 8 16 64 128
-cs = 5 10 15 20
-nus = 1e-4 1e-3 1e-2 1e-1 1
-nt_skips = 1 10 25 100 500
+ks = 4 8 32 64 128
+cs = 1000 2000 3000 4000
+nus = 1 100 10000 1000000
+nt_skips = 1 30 150 300 1800
 
 # constants
-bump_output_dir = outputs/swe-bump-large-var
-n_threads = 6 
+data_file = data/h_bump_test.nc
+bump_output_dir = outputs/swe-bump-tidal-redo
+n_threads = 17
 k_default = 32
-nt_skip_default = 100
+nt_skip_default = 30
 
 data/h_bump.nc:
 	python3 src/generate_data_swe_1d_bump.py \
@@ -18,26 +19,26 @@ data/h_bump.nc:
 bump_priors_linear:
 	python3 src/run_filter_swe_1d_bump.py \
 		--linear --n_threads $(n_threads)  --nt_skip $(nt_skip_default) --k $(k_default) \
-		--nu 0. --c $(cs) \
-		--data_file data/h_bump.nc --output_dir $(bump_output_dir)
+		--nu $(nus) --c $(cs) \
+		--data_file $(data_file) --output_dir $(bump_output_dir)
 
 bump_filters_linear:
 	python3 src/run_filter_swe_1d_bump.py \
 		--linear --n_threads $(n_threads) --nt_skip $(nt_skips) --k $(k_default) --posterior \
-		--nu 0. --c $(cs) \
-		--data_file data/h_bump.nc --output_dir $(bump_output_dir)
+		--nu $(nus) --c $(cs) \
+		--data_file $(data_file) --output_dir $(bump_output_dir)
 
 bump_priors_nonlinear:
 	python3 src/run_filter_swe_1d_bump.py \
 		--n_threads $(n_threads) --nt_skip $(nt_skip_default) --k $(k_default) \
 		--nu $(nus) --c $(cs) \
-		--data_file data/h_bump.nc --output_dir $(bump_output_dir)
+		--data_file $(data_file) --output_dir $(bump_output_dir)
 
 bump_filters_nonlinear:
 	python3 src/run_filter_swe_1d_bump.py \
 		--n_threads $(n_threads) --nt_skip $(nt_skips) --k $(k_default) --posterior \
 		--nu $(nus) --c $(cs)\
-		--data_file data/h_bump.nc --output_dir $(bump_output_dir)
+		--data_file $(data_file) --output_dir $(bump_output_dir)
 
 all_bump_prior: bump_priors_nonlinear bump_priors_linear
 
