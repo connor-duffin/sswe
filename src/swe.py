@@ -12,6 +12,8 @@ comm = fe.MPI.comm_world
 rank = comm.Get_rank()
 
 
+H_TIDAL_BC = fe.Expression(
+    "2 * (1 + cos(pi * ((4 * t) / 86400)))", t=0., degree=4)
 H_INIT_BUMP = fe.Expression("exp(- pow(2 * (x[0] - 10), 2)) / 40", degree=2)
 
 
@@ -60,6 +62,13 @@ class ShallowOneLinear:
         self.nx = control["nx"]
         self.dt = control["dt"]
         self.nu = params["nu"]
+
+        # setup parameters etc
+        self.shore_start = params["shore_start"]
+        self.shore_height = params["shore_height"]
+
+        self.bump_width = params["bump_width"]
+        self.bump_height = params["bump_height"]
         self.bump_centre = params["bump_centre"]
         self.L = 10_000
 
@@ -103,14 +112,13 @@ class ShallowOneLinear:
         u_right = fe.Constant(0.0)
         bc_u_right = fe.DirichletBC(self.W.sub(0), u_right, self._right)
 
-        self.tidal_bc = fe.Expression(
-            "2 * (1 + cos(pi * ((4 * t) / 86400)))", t=0., degree=4)
+        self.tidal_bc = H_TIDAL_BC
         bc_h_left = fe.DirichletBC(self.W.sub(1), self.tidal_bc, self._left)
         self.bcs = [bc_u_right, bc_h_left]
 
         H = fe.Expression(
-            "40 - 5 * (1 + tanh((x[0] - 2000)/2000))" +
-            f"-10 * exp(-0.5 / (100 * 100) * pow(x[0] - {self.bump_centre}, 2))",
+            f"30 - {self.shore_height} * (1 + tanh((x[0] - {self.shore_start}) / 2000))" +
+            f"-{self.bump_height} * exp(-0.5 / ({self.bump_width**2}) * pow(x[0] - {self.bump_centre}, 2))",
             degree=4)
         self.H = fe.interpolate(H, self.H_space)
         u, h = fe.TrialFunctions(self.W)
@@ -188,6 +196,11 @@ class ShallowOne:
         if self.simulation == "dam_break":
             self.L = 2000
         elif self.simulation == "tidal_flow":
+            self.shore_start = params["shore_start"]
+            self.shore_height = params["shore_height"]
+
+            self.bump_width = params["bump_width"]
+            self.bump_height = params["bump_height"]
             self.bump_centre = params["bump_centre"]
             self.L = 10_000
         elif self.simulation == "immersed_bump":
@@ -233,8 +246,8 @@ class ShallowOne:
             ic = fe.interpolate(p, self.H_space)
         elif self.simulation == "tidal_flow":
             H = fe.Expression(
-                "40 - 5 * (1 + tanh((x[0] - 2000)/2000))" +
-                f"-10 * exp(-0.5 / (100 * 100) * pow(x[0] - {self.bump_centre}, 2))",
+                f"30 - {self.shore_height} * (1 + tanh((x[0] - {self.shore_start})/2000))" +
+                f"-{self.bump_height} * exp(-0.5 / ({self.bump_width**2}) * pow(x[0] - {self.bump_centre}, 2))",
                 degree=4)
             self.H = fe.interpolate(H, self.H_space)
         elif self.simulation == "immersed_bump":
@@ -300,8 +313,7 @@ class ShallowOne:
         elif self.simulation == "tidal_flow":
             u_right = fe.Constant(0.0)
             bc_u_right = fe.DirichletBC(self.W.sub(0), u_right, self._right)
-            self.tidal_bc = fe.Expression(
-                "2 * (1 + cos(pi * ((4 * t) / 86400)))", t=0., degree=4)
+            self.tidal_bc = H_TIDAL_BC
             bc_h_left = fe.DirichletBC(self.W.sub(1), self.tidal_bc, self._left)
             self.bcs = [bc_u_right, bc_h_left]
         elif self.simulation == "immersed_bump":
