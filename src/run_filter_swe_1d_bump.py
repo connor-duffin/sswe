@@ -53,7 +53,7 @@ def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
                        hilbert_gp=True)
 
     # keep fixed for now
-    obs_system = dict(nt_skip=nt_skip, nx_skip=50, sigma_y=5e-2)
+    obs_system = dict(nt_skip=nt_skip, nx_skip=10, sigma_y=5e-2)
 
     if linear:
         swe = ShallowOneKalman(control=control,
@@ -80,14 +80,17 @@ def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
     np.testing.assert_allclose(dat.coords["x"].values, swe.x_coords.flatten())
 
     # build observation/interpolation operators
+    h_dgp = dat["h"].values[1:, :]
     y_obs = dat["h"].values[1:, ::obs_system["nx_skip"]]  # dont include IC
     x_obs = dat.coords["x"].values[::obs_system["nx_skip"]][:, np.newaxis]
+
     H_obs = build_observation_operator(x_obs, swe.W, sub=1, out="scipy")
     H_u_verts = build_observation_operator(swe.x_coords, swe.W, sub=0)
     H_h_verts = build_observation_operator(swe.x_coords, swe.W, sub=1)
 
     # setup output storage
     t_output = np.zeros((nt + 1, ))
+    dgp_error_output = np.zeros((nt + 1, swe.n_vertices))
     u_mean_output = np.zeros((nt + 1, swe.n_vertices))
     h_mean_output = np.zeros((nt + 1, swe.n_vertices))
     u_var_output = np.zeros((nt + 1, swe.n_vertices))
@@ -102,6 +105,7 @@ def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
 
     # store outputs
     t_output[0] = 0.
+    dgp_error_output[0] = 0.
     u_mean_output[0, :] = H_u_verts @ swe.du_prev.vector().get_local()
     h_mean_output[0, :] = H_h_verts @ swe.du_prev.vector().get_local()
     u_var_output[0, :] = np.sum((H_u_verts @ swe.cov_sqrt)**2, axis=1)
@@ -159,8 +163,15 @@ def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
 
             # store outputs
             t_output[i] = t
+            dgp_error_output[i] = (
+                np.linalg.norm(H_h_verts @ swe.mean - h_dgp[i, :]) /
+                np.linalg.norm(h_dgp[i, :]))
+
+            # means
             u_mean_output[i, :] = H_u_verts @ swe.mean
             h_mean_output[i, :] = H_h_verts @ swe.mean
+
+            # variances
             u_var_output[i, :] = np.sum((H_u_verts @ swe.cov_sqrt)**2, axis=1)
             h_var_output[i, :] = np.sum((H_h_verts @ swe.cov_sqrt)**2, axis=1)
         except RuntimeError:
@@ -169,6 +180,7 @@ def run_model(data_file, nt_skip, k, c, nu, linear, output_dir, posterior=True):
 
     logger.info("%s finished running", output_file_stem)
     output.create_dataset("t", data=t_output[:(i + 1)])
+    output.create_dataset("dgp_error", data=dgp_error_output[:(i + 1), :])
     output.create_dataset("u_mean", data=u_mean_output[:(i + 1), :])
     output.create_dataset("u_var", data=u_var_output[:(i + 1), :])
     output.create_dataset("h_mean", data=h_mean_output[:(i + 1), :])
@@ -193,23 +205,18 @@ if __name__ == "__main__":
     parser.add_argument("--data_file", type=str)
     parser.add_argument("--posterior", action="store_true")
     parser.add_argument("--linear", action="store_true")
-    parser.add_argument("--nt_skip", nargs="+", type=int)  # , default = 8
-    parser.add_argument("--nu", nargs="+", type=float)  # , default = 1e-4
-    parser.add_argument("--c", nargs="+", type=float)  # , default = 10.
+    parser.add_argument("--nt_skip", nargs="+", type=int)  # , default = 30
+    parser.add_argument("--nu", nargs="+", type=float)  # , default = 1.
+    parser.add_argument("--c", nargs="+", type=float)  # , default = 1000.
     parser.add_argument("--k", nargs="+", type=int)  # , default = 32
     parser.add_argument("--output_dir", type=str)
     args = parser.parse_args()
 
     p = Pool(args.n_threads)
     model_args = []
-    if args.linear:
-        for a in product(args.nt_skip, args.k, args.c):
-            model_args.append(
-                (args.data_file, *a, 0., args.linear, args.output_dir, args.posterior))
-    else:
-        for a in product(args.nt_skip, args.k, args.c, args.nu):
-            model_args.append(
-                (args.data_file, *a, args.linear, args.output_dir, args.posterior))
+    for a in product(args.nt_skip, args.k, args.c, args.nu):
+        model_args.append(
+            (args.data_file, *a, args.linear, args.output_dir, args.posterior))
 
     logger.info(model_args)
     out = p.starmap(run_model, model_args)
