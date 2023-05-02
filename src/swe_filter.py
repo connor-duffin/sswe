@@ -122,7 +122,7 @@ class ShallowOneFilter:
                 - log_det / 2
                 - n_obs * np.log(2 * np.pi) / 2)
 
-    def update_step(self, y, H, sigma_y):
+    def update_step(self, y, H, sigma_y, return_correction=False):
         self.mean[:] = self.du.vector().get_local()
         mean_obs = H @ self.mean
 
@@ -143,18 +143,23 @@ class ShallowOneFilter:
             HL = H @ self.cov_sqrt
             S_inv_HL = cho_solve(S_chol, HL)
 
-            self.mean += self.cov_sqrt @ HL.T @ S_inv_y
+            correction = self.cov_sqrt @ HL.T @ S_inv_y
+            self.mean += correction
             R = cholesky(np.eye(HL.shape[1]) - HL.T @ S_inv_HL, lower=True)
             self.cov_sqrt[:] = self.cov_sqrt @ R
         else:
             HC = H @ self.cov
 
+            correction = HC.T @ S_inv_y
             S_inv_HC = cho_solve(S_chol, HC)
-            self.mean += HC.T @ S_inv_y
+            self.mean += correction
             self.cov -= HC.T @ S_inv_HC
 
         # update fenics state vector
         self.du.vector().set_local(self.mean.copy())
+
+        if return_correction:
+            return correction
 
     def set_prev(self):
         """ Assign the current to the previous solution vector. """

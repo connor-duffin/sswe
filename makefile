@@ -1,61 +1,66 @@
 # 1d immersed bump
 # ----------------
 ks = 4 8 32 64 128
-cs = 1000 2000 3000 4000 5000
-nus = 1 100 1000 10000
-nt_skips = 1 30 150 300
+s = 2000 4000 6000 8000
+nus = 1 1000 10000 50000 100000
+nx_obs = 1
+nt_skips = 1 30 150
 
 # constants
-data_file = data/h_bump_test.nc
-bump_output_dir = outputs/swe-bump-tidal-redo
-n_threads = 17
+data_file = data/h_shore.nc
+model_output_dir = outputs/swe-tidal-redo-sparse
+n_threads = 12
 k_default = 32
 nt_skip_default = 30
 
-data/h_bump.nc:
+$(data_file):
 	python3 src/generate_data_swe_1d_bump.py \
-		--output_file $@
+		--add_noise --output_file $@
 
-bump_priors_linear:
+priors_linear:
 	python3 src/run_filter_swe_1d_bump.py \
-		--linear --n_threads $(n_threads) --nt_skip $(nt_skip_default) --k $(k_default) \
-		--nu $(nus) --c $(cs) \
-		--data_file $(data_file) --output_dir $(bump_output_dir)
+		--linear --n_threads $(n_threads) --nx_obs $(nx_obs) --nt_skip $(nt_skip_default) --k $(k_default) \
+		--nu $(nus) --s $(s) \
+		--data_file $(data_file) --output_dir $(model_output_dir)
 
-bump_filters_linear:
+filters_linear:
+	time -v python3 src/run_filter_swe_1d_bump.py \
+		--linear --n_threads $(n_threads) --nx_obs $(nx_obs) --nt_skip $(nt_skips) --k $(k_default) --posterior \
+		--nu $(nus) --s $(s) \
+		--data_file $(data_file) --output_dir $(model_output_dir)
+
+priors_nonlinear:
 	python3 src/run_filter_swe_1d_bump.py \
-		--linear --n_threads $(n_threads) --nt_skip $(nt_skips) --k $(k_default) --posterior \
-		--nu $(nus) --c $(cs) \
-		--data_file $(data_file) --output_dir $(bump_output_dir)
+		--n_threads $(n_threads) --nx_obs $(nx_obs) --nt_skip $(nt_skip_default) --k $(k_default) \
+		--nu $(nus) --s $(s) \
+		--data_file $(data_file) --output_dir $(model_output_dir)
 
-bump_priors_nonlinear:
-	python3 src/run_filter_swe_1d_bump.py \
-		--n_threads $(n_threads) --nt_skip $(nt_skip_default) --k $(k_default) \
-		--nu $(nus) --c $(cs) \
-		--data_file $(data_file) --output_dir $(bump_output_dir)
+filters_nonlinear:
+	time -v python3 src/run_filter_swe_1d_bump.py \
+		--n_threads $(n_threads) --nx_obs $(nx_obs) --nt_skip $(nt_skips) --k $(k_default) --posterior \
+		--nu $(nus) --s $(s) \
+		--data_file $(data_file) --output_dir $(model_output_dir)
 
-bump_filters_nonlinear:
-	python3 src/run_filter_swe_1d_bump.py \
-		--n_threads $(n_threads) --nt_skip $(nt_skips) --k $(k_default) --posterior \
-		--nu $(nus) --c $(cs) \
-		--data_file $(data_file) --output_dir $(bump_output_dir)
+all_nonlinear: priors_nonlinear filters_nonlinear
 
-all_bump_prior: bump_priors_nonlinear bump_priors_linear
+all_linear: priors_linear filters_linear
 
-all_bump_post: bump_filters_nonlinear bump_filters_linear
+all_prior: priors_nonlinear priors_linear
 
-all_bump_prior_post: all_bump_prior all_bump_post
+all_post: filters_nonlinear filters_linear
 
-clean_all_bump_outputs:
-	rm $(bump_output_dir)/*
+all_prior_post: all_prior all_post
+
+clean_all_outputs:
+	rm $(model_output_dir)/*
 
 # (old!) deterministic models
-$(bump_output_dir)/nu-%.h5: src/run_swe_1d_bump.py
+$(model_output_dir)/nu-%.h5: src/run_swe_1d_bump.py
 	python3 $< \
 		--nu $* --output_file $@ \
 		--nx 500 --dt 0.01 --nt_save 10
 
-$(bump_output_dir)/linear.h5: src/run_swe_1d_bump.py
+$(model_output_dir)/linear.h5: src/run_swe_1d_bump.py
 	python3 $< \
 		--output_file $@ --linear \
 		--nx 500 --dt 0.01 --nt_save 10
