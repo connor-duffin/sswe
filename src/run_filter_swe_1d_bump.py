@@ -21,7 +21,7 @@ norm = np.linalg.norm
 
 
 # set up global vars
-control = dict(nx=500, dt=2., theta=0.6, simulation="tidal_flow")
+control = dict(nx=500, dt=1., theta=0.6, simulation="tidal_flow")
 
 
 def compute_rmse(post, y_obs, H_obs, relative=False):
@@ -81,6 +81,7 @@ def run_model(data_file, nx_obs, nt_skip, k, s, nu, linear, output_dir,
     nt_obs = len([i for i in range(nt) if i % obs_system["nt_skip"] == 0])
 
     # do some double checking
+    assert dat.attrs["shore_height"] == params["shore_height"]
     assert control["dt"] == (dat.coords["t"].values[1]
                              - dat.coords["t"].values[0])
     assert t_final <= dat.coords["t"].values[-1]
@@ -243,7 +244,6 @@ if __name__ == "__main__":
         model_args.append(
             (args.data_file, *a, args.linear, args.output_dir, args.posterior))
 
-    logger.info(model_args)
     out = p.starmap(run_model, model_args)
 
     # log wallclock time

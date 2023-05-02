@@ -19,7 +19,7 @@ args = parser.parse_args()
 SIGMA_Y = 5e-2
 T_FINAL = 24 * 60 * 60
 
-settings = dict(nx=500, dt=2., theta=0.6, nu=1., shore_start=2000)
+settings = dict(nx=500, dt=1., theta=0.6, nu=1., shore_start=2000)
 control = dict(nx=settings["nx"],
                dt=settings["dt"],
                theta=0.6,
