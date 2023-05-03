@@ -99,12 +99,19 @@ def run_model(data_file, nx_obs, nt_skip, k, s, nu, linear, output_dir,
     H_u_verts = build_observation_operator(swe.x_coords, swe.W, sub=0)
     H_h_verts = build_observation_operator(swe.x_coords, swe.W, sub=1)
 
-    # setup output storage
-    t_output = np.zeros((nt + 1, ))
-    u_mean_output = np.zeros((nt + 1, swe.n_vertices))
-    h_mean_output = np.zeros((nt + 1, swe.n_vertices))
-    u_var_output = np.zeros((nt + 1, swe.n_vertices))
-    h_var_output = np.zeros((nt + 1, swe.n_vertices))
+    # setup output storage: save every thin'th iteration of the mean/var
+    thin = 10 * 60
+    nt_save = len([i for i in range(nt) if i % thin == 0])
+
+    t_output = np.zeros((nt_save + 1, ))
+    u_mean_output = np.zeros((nt_save + 1, swe.n_vertices))
+    h_mean_output = np.zeros((nt_save + 1, swe.n_vertices))
+    u_var_output = np.zeros((nt_save + 1, swe.n_vertices))
+    h_var_output = np.zeros((nt_save + 1, swe.n_vertices))
+
+    t_checkpoint = 0.
+    mean_checkpoint = np.zeros((swe.n_dofs, ))
+    cov_sqrt_checkpoint = np.zeros((swe.n_dofs, swe.k))
 
     # data-based outputs
     t_obs = np.zeros((nt_obs, ))
@@ -113,8 +120,11 @@ def run_model(data_file, nx_obs, nt_skip, k, s, nu, linear, output_dir,
 
     # posterior corrections
     if posterior:
-        u_correction = np.zeros((nt_obs, swe.n_vertices))
-        h_correction = np.zeros((nt_obs, swe.n_vertices))
+        # save corrections (thinned across time)
+        # u_correction = np.zeros((nt_save, swe.n_vertices))
+        # h_correction = np.zeros((nt_save, swe.n_vertices))
+
+        # save log marginal likelihoods
         lml_output = np.zeros((nt_obs, ))
 
     # store outputs
@@ -149,6 +159,7 @@ def run_model(data_file, nx_obs, nt_skip, k, s, nu, linear, output_dir,
 
     t = 0.
     i_save = 0
+    i_update = 0
     logger.info("%s starting running", output_file_stem)
     for i in range(nt):
         try:
@@ -164,47 +175,62 @@ def run_model(data_file, nx_obs, nt_skip, k, s, nu, linear, output_dir,
 
                 if posterior:
                     # compute log-marginal likelihood and update
-                    lml_output[i_save] = swe.compute_lml(
+                    lml_output[i_update] = swe.compute_lml(
                         y, H_obs, obs_system["sigma_y"])
 
                     correction = swe.update_step(
                         y, H_obs, obs_system["sigma_y"],
                         return_correction=True)
 
-                    # u and h corrections
-                    u_correction[i_save] = H_u_verts @ correction
-                    h_correction[i_save] = H_h_verts @ correction
-
                 # compute RMSE
-                rmse_output[i_save] = compute_rmse(swe, y, H_obs, False)
-                rmse_rel_output[i_save] = compute_rmse(swe, y, H_obs, True)
-                t_obs[i_save] = t
-                i_save += 1
+                rmse_output[i_update] = compute_rmse(swe, y, H_obs, False)
+                rmse_rel_output[i_update] = compute_rmse(swe, y, H_obs, True)
+                t_obs[i_update] = t
+                i_update += 1
 
             # set to previous
             swe.set_prev()
 
-            # store outputs
-            t_output[i] = t
+            # store outputs every thin'th iteration
+            if i % thin == 0:
+                t_output[i_save] = t
 
-            # means
-            u_mean_output[i, :] = H_u_verts @ swe.mean
-            h_mean_output[i, :] = H_h_verts @ swe.mean
+                # u and h corrections
+                # u_correction[i_save] = H_u_verts @ correction
+                # h_correction[i_save] = H_h_verts @ correction
 
-            # variances
-            u_var_output[i, :] = np.sum((H_u_verts @ swe.cov_sqrt)**2, axis=1)
-            h_var_output[i, :] = np.sum((H_h_verts @ swe.cov_sqrt)**2, axis=1)
+                # means
+                u_mean_output[i_save, :] = H_u_verts @ swe.mean
+                h_mean_output[i_save, :] = H_h_verts @ swe.mean
+
+                # variances
+                u_var_output[i_save, :] = np.sum(
+                    (H_u_verts @ swe.cov_sqrt)**2, axis=1)
+                h_var_output[i_save, :] = np.sum(
+                    (H_h_verts @ swe.cov_sqrt)**2, axis=1)
+
+                # checkpointing
+                t_checkpoint = t
+                mean_checkpoint[:] = swe.mean.copy()
+                cov_sqrt_checkpoint[:] = swe.cov_sqrt.copy()
+                i_save += 1
+
         except RuntimeError:
             logger.error("Filter, nu = %.5f failed at t= %.5f, exiting", nu, t)
             break
 
     # means and vars
     logger.info("%s finished running", output_file_stem)
-    output.create_dataset("t", data=t_output[:(i + 1)])
-    output.create_dataset("u_mean", data=u_mean_output[:(i + 1), :])
-    output.create_dataset("u_var", data=u_var_output[:(i + 1), :])
-    output.create_dataset("h_mean", data=h_mean_output[:(i + 1), :])
-    output.create_dataset("h_var", data=h_var_output[:(i + 1), :])
+    output.create_dataset("t", data=t_output)
+    output.create_dataset("u_mean", data=u_mean_output)
+    output.create_dataset("u_var", data=u_var_output)
+    output.create_dataset("h_mean", data=h_mean_output)
+    output.create_dataset("h_var", data=h_var_output)
+
+    # checkpoints
+    output.create_dataset("t_checkpoint", data=t_checkpoint)
+    output.create_dataset("mean_checkpoint", data=mean_checkpoint)
+    output.create_dataset("cov_sqrt_checkpoint", data=cov_sqrt_checkpoint)
 
     # outputs creation, etc
     output.create_dataset("t_obs", data=t_obs)
@@ -212,9 +238,10 @@ def run_model(data_file, nx_obs, nt_skip, k, s, nu, linear, output_dir,
     output.create_dataset("rmse_rel", data=rmse_rel_output)
 
     if posterior:
-        output.create_dataset("u_correction", data=u_correction)
-        output.create_dataset("h_correction", data=h_correction)
         output.create_dataset("lml", data=lml_output)
+
+        # output.create_dataset("u_correction", data=u_correction)
+        # output.create_dataset("h_correction", data=h_correction)
 
     output.close()
     return i
