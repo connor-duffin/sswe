@@ -2,15 +2,15 @@
 # ----------------
 ks = 4 8 32 64 128
 s = 2000 3500 5000 6500 8000
-nus = 1 1000 10000 50000 100000
+nus = 5 10  # 1 5 10 500 1000 10000 50000
 nx_obs = 1 2 5
 nt_skips = 1 30 60 120 180
 
 # constants
 data_file = data/h_shore.nc
 dgp_file = data/h_shore_dgp.nc
-model_output_dir = outputs/swe-tidal-redo-sparse
-n_threads = 8
+model_output_dir = outputs/swe-tidal-sparse
+n_threads = 16
 k_default = 32
 nt_skip_default = 30
 
