@@ -5,8 +5,6 @@ with 1D shallow water equations (SWE). Misspecification, in this sense, follows
 the statistical definition whereby there employed likelihood is not the same
 as that used to generate the data.
 
-## Overview
-
 The code is structured as follows:
 
 * `data` is an empty directory where the simulated data is generated.
@@ -22,38 +20,51 @@ To run the unit tests run:
 python3 -m pytest src
 ```
 
+## Running the code
+
 To compute the models and generate the data, we go from the makefile. To generate the data:
 
 ```{bash}
 make data/h_shore.nc
 ```
 
-To generate all the nonlinear model posteriors, across all parameters, run
+Now, having this data, we can compute the model posteriors and
+priors. To generate all the nonlinear model posteriors, across all
+parameters, run
 
 ```{bash}
 make filters_nonlinear
 ```
 
-and for the linear models
+and for the linear models (again across all parameters)
 
 ```{bash}
 make filters_linear
 ```
 
-To compute the priors you do
+To compute the priors you run
 
 ```{bash}
 make priors_nonlinear
 ```
 
-And likewise for the linear priors:
+And likewise for the linear priors
 
 ```{bash}
 make priors_linear
 ```
 
-To compute all posteriors and priors, simply run
+To compute all posteriors and priors, across all parameters, simply run
 
 ```{bash}
 make all_prior_post
 ```
+
+To analyse the model outputs we assume that we have run all the posterior and priors, as detailed above. First, load up a jupyter lab session in this directory.
+
+```{bash}
+jupyter lab
+```
+
+Now, from this, navigate to the `notebooks` directory, where you should be able to access the appropriate notebooks for this work.
+
