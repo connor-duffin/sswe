@@ -14,7 +14,17 @@ The code is structured as follows:
 * `src` houses all the code for the project, and unit tests.
 * `makefile` contains the instructions to run the models, from `src`.
 
-To run the unit tests run:
+## Setting up the environment
+
+First, we need to setup the environment to run this code from. For this we use the `swfe.yml` file housed in this repo:
+
+```{bash}
+conda env create -n swfe --file swfe.yml
+```
+
+This may run into problems with not finding the `statfenics` package: this is available from [here](https://github.com/connor-duffin/statfenics).
+
+Now, having the `swfe` environment activated, to run the unit tests run:
 
 ```{bash}
 python3 -m pytest src
@@ -22,7 +32,7 @@ python3 -m pytest src
 
 ## Running the code
 
-To compute the models and generate the data, we go from the makefile. To generate the data:
+To compute the models and generate the data, we go from the makefile. Again, this needs the `swfe` environment to be active. To generate the data:
 
 ```{bash}
 make data/h_shore.nc
