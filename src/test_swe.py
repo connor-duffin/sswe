@@ -7,7 +7,9 @@ from swe import ShallowOneLinear, ShallowOne
 
 def test_shallowone_linear_init():
     control = {"nx": 32, "dt": 0.02, "theta": 1.0, "simulation": "tidal_flow"}
-    params = {"nu": 1.0, "bump_centre": 1000.}
+    params = {"nu": 1.0,
+              "shore_start": 1000, "shore_height": 5,
+              "bump_height": 0, "bump_width": 100, "bump_centre": 1000.}
 
     swe = ShallowOneLinear(control, params)
     assert len(swe.x_dofs_u) == 65
@@ -52,7 +54,9 @@ def test_shallowone_linear_init():
 def test_shallowone_init():
     # re-instantiate with diff setup BCs
     control = {"nx": 32, "dt": 0.02, "theta": 1.0, "simulation": "tidal_flow"}
-    params = {"nu": 1.0, "bump_centre": 1000.}
+    params = {"nu": 1.0,
+              "shore_start": 1000, "shore_height": 5,
+              "bump_height": 0, "bump_width": 100, "bump_centre": 1000.}
     swe = ShallowOne(control, params)
 
     assert len(swe.x_dofs_u) == 65
@@ -60,7 +64,7 @@ def test_shallowone_init():
     assert len(swe.x_coords) == 33
 
     # regression test for BC
-    assert swe.tidal_bc(1.) == 4.
+    assert_allclose(swe.tidal_bc(1.), 4.)
 
     # now verify dam break scenario
     control["simulation"] = "dam_break"
@@ -81,7 +85,9 @@ def test_shallowone_init():
 def test_shallowone_vertices():
     # check that function computations look reasonable
     control = {"nx": 32, "dt": 0.02, "theta": 1.0, "simulation": "tidal_flow"}
-    params = {"nu": 1.0, "bump_centre": 1000.}
+    params = {"nu": 1.0,
+              "shore_start": 1000, "shore_height": 5,
+              "bump_height": 0, "bump_width": 100, "bump_centre": 1000.}
     swe = ShallowOne(control, params)
 
     du_true = fe.Expression(("t * sin(x[0])", "t * cos(x[0])"), t=2., degree=4)

@@ -14,7 +14,9 @@ from swe_filter import ShallowOneEx, ShallowOneKalman
 
 def test_1d_linear_filter():
     control = {"nx": 32, "dt": 0.5, "theta": 1.0, "simulation": "immersed_bump"}
-    params = {"nu": 0., "bump_centre": 10}
+    params = {"nu": 1.0,
+              "shore_start": 1000, "shore_height": 5,
+              "bump_height": 0, "bump_width": 100, "bump_centre": 1000.}
     stat_params = dict(rho_u=1e-2, ell_u=5000.,
                        rho_h=0., ell_h=5000.)
     # k=k, k_init_u=k, k_init_h=k
@@ -37,17 +39,22 @@ def test_1d_linear_filter():
     F = (fe.inner(h - h_prev, v_h) / dt * fe.dx
          + (swe.H * u_theta).dx(0) * v_h * fe.dx
          + fe.inner(u - u_prev, v_u) / dt * fe.dx
+         + 1 * fe.inner(fe.grad(u_theta), fe.grad(v_u)) * fe.dx
          + 9.8 * h_theta.dx(0) * v_u * fe.dx)
 
     J = fe.assemble(fe.derivative(F, du))
-    swe.bcs.apply(J)
+    for bc in swe.bcs:
+        bc.apply(J)
+
     J_scipy = dolfin_to_csr(J)
     np.testing.assert_allclose(swe.A_scipy.todense(), J_scipy.todense())
 
 
 def test_1d_nonlinear_filter():
     control = {"nx": 32, "dt": 1., "theta": 1.0, "simulation": "tidal_flow"}
-    params = {"nu": 1.}
+    params = {"nu": 1.0,
+              "shore_start": 1000, "shore_height": 5,
+              "bump_height": 0, "bump_width": 100, "bump_centre": 1000.}
     stat_params = dict(rho_u=1., ell_u=5000.,
                        rho_h=0., ell_h=5000.)
     swe = ShallowOneEx(control, params, stat_params, lr=False)
@@ -99,7 +106,9 @@ def test_1d_nonlinear_filter():
 def test_1d_filter_lr():
     k = 16
     control = {"nx": 32, "dt": 1., "theta": 1.0, "simulation": "tidal_flow"}
-    params = {"nu": 1.}
+    params = {"nu": 1.0,
+              "shore_start": 1000, "shore_height": 5,
+              "bump_height": 0, "bump_width": 100, "bump_centre": 1000.}
     stat_params = dict(rho_u=1, ell_u=5000.,
                        rho_h=1, ell_h=5000.,
                        k=k, k_init_u=k, k_init_h=k, hilbert_gp=False)
@@ -164,4 +173,5 @@ def test_1d_filter_lr():
     np.testing.assert_allclose(swe.G_sqrt @ swe.G_sqrt.T, G_full)
 
     # regression test to see that computations are the same
-    np.testing.assert_allclose(np.linalg.norm(G_sqrt - G_sqrt_hilbert), 3827.659732)
+    np.testing.assert_allclose(np.linalg.norm(G_sqrt - G_sqrt_hilbert),
+                               2572.199803)

@@ -67,4 +67,3 @@ jupyter lab
 ```
 
 Now, from this, navigate to the `notebooks` directory, where you should be able to access the appropriate notebooks for this work.
-
