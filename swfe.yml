@@ -1,8 +1,0 @@
-name: swfe
-channels:
-  - defaults
-dependencies:
-  - pip
-  - fenics
-  - meshio
-prefix: /Users/connor/miniconda3/envs/swfe
